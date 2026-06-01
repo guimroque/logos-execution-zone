@@ -90,13 +90,15 @@ impl LeeTransaction {
             }
         }?;
 
-        let system_accounts = lee::CLOCK_PROGRAM_ACCOUNT_IDS.iter().copied().chain([
-            lee::system_faucet_account_id(),
-            lee::system_bridge_account_id(),
-        ]);
+        let system_accounts = lee::CLOCK_PROGRAM_ACCOUNT_IDS
+            .iter()
+            .copied()
+            .chain(std::iter::once(lee::system_faucet_account_id()));
         for account_id in system_accounts {
             validate_doesnt_modify_account(state, &diff, account_id)?;
         }
+
+        self.validate_bridge_account_modification(state, &diff)?;
 
         Ok(diff)
     }
@@ -114,6 +116,50 @@ impl LeeTransaction {
             .inspect_err(|err| warn!("Error at transition {err:#?}"))?;
         state.apply_state_diff(diff);
         Ok(self)
+    }
+
+    fn validate_bridge_account_modification(
+        &self,
+        state: &V03State,
+        diff: &ValidatedStateDiff,
+    ) -> Result<(), lee::error::LeeError> {
+        let bridge_account_id = lee::system_bridge_account_id();
+        let pre = state.get_account_by_id(bridge_account_id);
+        let Some(post) = diff.public_diff().get(&bridge_account_id).cloned() else {
+            return Ok(());
+        };
+
+        let Self::Public(_) = self else {
+            return Err(lee::error::LeeError::InvalidInput(format!(
+                "Non-public transaction cannot modify system bridge account {bridge_account_id}"
+            )));
+        };
+
+        let lee::Account {
+            balance: pre_balance,
+            program_owner: pre_program_owner,
+            data: pre_data,
+            nonce: pre_nonce,
+        } = pre;
+        let lee::Account {
+            balance: post_balance,
+            program_owner: post_program_owner,
+            data: post_data,
+            nonce: post_nonce,
+        } = post;
+
+        let only_balance_increased = post_balance >= pre_balance
+            && post_program_owner == pre_program_owner
+            && post_data == pre_data
+            && post_nonce == pre_nonce;
+
+        if only_balance_increased {
+            Ok(())
+        } else {
+            Err(lee::error::LeeError::InvalidInput(format!(
+                "Transaction modifies restricted system bridge account {bridge_account_id}"
+            )))
+        }
     }
 }
 
