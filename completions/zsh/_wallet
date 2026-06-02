@@ -25,6 +25,7 @@ _wallet() {
                 'token:Token program interaction subcommand'
                 'amm:AMM program interaction subcommand'
                 'ata:Associated Token Account program interaction subcommand'
+                'bridge:Bridge program interaction subcommand'
                 'check-health:Check the wallet can connect to the node and builtin local programs match the remote versions'
                 'config:Command to setup config, get and set config fields'
                 'restore-keys:Restoring keys from given password at given depth'
@@ -55,6 +56,9 @@ _wallet() {
                     ;;
                 ata)
                     _wallet_ata
+                    ;;
+                bridge)
+                    _wallet_bridge
                     ;;
                 config)
                     _wallet_config
@@ -442,6 +446,35 @@ _wallet_ata() {
     esac
 }
 
+# bridge subcommand
+_wallet_bridge() {
+    local -a subcommands
+
+    _arguments -C \
+        '1: :->subcommand' \
+        '*:: :->args'
+
+    case $state in
+        subcommand)
+            subcommands=(
+                'withdraw:Withdraw native tokens through the bridge'
+                'help:Print this message or the help of the given subcommand(s)'
+            )
+            _describe -t subcommands 'bridge subcommands' subcommands
+            ;;
+        args)
+            case $line[1] in
+                withdraw)
+                    _arguments \
+                        '--from[Sender account with privacy prefix]:from:_wallet_account_ids' \
+                        '--amount[Amount of native tokens to withdraw]:amount:' \
+                        '--bedrock-account-pk[Bedrock account public key (32-byte hex)]:bedrock_pk:'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
 # config subcommand
 _wallet_config() {
     local -a subcommands
@@ -515,6 +548,7 @@ _wallet_help() {
         'token:Token program interaction subcommand'
         'amm:AMM program interaction subcommand'
         'ata:Associated Token Account program interaction subcommand'
+        'bridge:Bridge program interaction subcommand'
         'check-health:Check the wallet can connect to the node'
         'config:Command to setup config, get and set config fields'
         'restore-keys:Restoring keys from given password at given depth'

@@ -4753,8 +4753,8 @@ pub mod tests {
             bridge_account_id,
         );
 
-        let esk = [3; 32];
-        let shared_secret = SharedSecretKey::new(esk, &sender_keys.vpk());
+        let shared_secret =
+            SharedSecretKey::encapsulate_deterministic(&sender_keys.vpk(), &[0_u8; 32], 0).0;
 
         let instruction = Program::serialize_instruction(bridge_core::Instruction::Withdraw {
             amount: 1,
@@ -4797,7 +4797,7 @@ pub mod tests {
             vec![(
                 sender_keys.npk(),
                 sender_keys.vpk(),
-                EphemeralPublicKey::from_scalar(esk),
+                EphemeralPublicKey(vec![12_u8; 1088]),
             )],
             output,
         )
