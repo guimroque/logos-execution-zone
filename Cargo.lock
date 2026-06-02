@@ -9035,6 +9035,7 @@ dependencies = [
  "futures",
  "hex",
  "humantime-serde",
+ "key_protocol",
  "lee",
  "lee_core",
  "log",

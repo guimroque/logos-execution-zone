@@ -4725,4 +4725,90 @@ pub mod tests {
 
         assert_eq!(state.get_account_by_id(recipient_id).balance, amount);
     }
+
+    #[test]
+    fn private_bridge_withdraw_invocation_is_dropped() {
+        let sender_keys = test_private_account_keys_1();
+        let sender_private_account = Account {
+            // Keep sender private account owned by a non-authenticated-transfer program
+            // so bridge::Withdraw is rejected.
+            program_owner: Program::authenticated_transfer_program().id(),
+            balance: 100,
+            nonce: Nonce(0xdead_beef),
+            data: Data::default(),
+        };
+
+        let mut state = V03State::new_with_genesis_accounts(&[], vec![], 0)
+            .with_private_account(&sender_keys, &sender_private_account);
+
+        let sender_account_id = AccountId::for_regular_private_account(&sender_keys.npk(), 0);
+        let sender_commitment = Commitment::new(&sender_account_id, &sender_private_account);
+        let bridge_account_id = system_bridge_account_id();
+
+        let sender_pre =
+            AccountWithMetadata::new(sender_private_account, true, (&sender_keys.npk(), 0));
+        let bridge_pre = AccountWithMetadata::new(
+            state.get_account_by_id(bridge_account_id),
+            false,
+            bridge_account_id,
+        );
+
+        let esk = [3; 32];
+        let shared_secret = SharedSecretKey::new(esk, &sender_keys.vpk());
+
+        let instruction = Program::serialize_instruction(bridge_core::Instruction::Withdraw {
+            amount: 1,
+            bedrock_account_pk: [0; 32],
+        })
+        .unwrap();
+
+        let program_with_deps = ProgramWithDependencies::new(
+            Program::bridge(),
+            [(
+                Program::authenticated_transfer_program().id(),
+                Program::authenticated_transfer_program(),
+            )]
+            .into(),
+        );
+
+        let bridge_nonce = bridge_pre.account.nonce;
+
+        let (output, proof) = execute_and_prove(
+            vec![sender_pre, bridge_pre],
+            instruction,
+            vec![
+                InputAccountIdentity::PrivateAuthorizedUpdate {
+                    ssk: shared_secret,
+                    nsk: sender_keys.nsk,
+                    membership_proof: state
+                        .get_proof_for_commitment(&sender_commitment)
+                        .expect("sender commitment must be in state"),
+                    identifier: 0,
+                },
+                InputAccountIdentity::Public,
+            ],
+            &program_with_deps,
+        )
+        .expect("Execution should succeed");
+
+        let message = Message::try_from_circuit_output(
+            vec![bridge_account_id],
+            vec![bridge_nonce],
+            vec![(
+                sender_keys.npk(),
+                sender_keys.vpk(),
+                EphemeralPublicKey::from_scalar(esk),
+            )],
+            output,
+        )
+        .expect("Message construction should succeed");
+        let witness_set = WitnessSet::for_message(&message, proof, &[]);
+        let tx = PrivacyPreservingTransaction::new(message, witness_set);
+        let res = state.transition_from_privacy_preserving_transaction(&tx, 1, 0);
+
+        assert!(
+            res.is_err(),
+            "Bridge withdraw invocation should be rejected in private execution"
+        );
+    }
 }
