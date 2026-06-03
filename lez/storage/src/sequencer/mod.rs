@@ -11,12 +11,16 @@ use rocksdb::{
 
 use crate::{
     CF_BLOCK_NAME, CF_META_NAME, DB_META_FIRST_BLOCK_IN_DB_KEY, DBIO, DbResult,
-    cells::shared_cells::{BlockCell, FirstBlockCell, FirstBlockSetCell, LastBlockCell},
+    cells::{
+        SimpleStorableCell,
+        shared_cells::{BlockCell, FirstBlockCell, FirstBlockSetCell, LastBlockCell},
+    },
     error::DbError,
     sequencer::sequencer_cells::{
         LEEStateCellOwned, LEEStateCellRef, LastFinalizedBlockIdCell, LatestBlockMetaCellOwned,
         LatestBlockMetaCellRef, PendingDepositEventRecord, PendingDepositEventsCellOwned,
-        PendingDepositEventsCellRef, ZoneSdkCheckpointCellOwned, ZoneSdkCheckpointCellRef,
+        PendingDepositEventsCellRef, UnseenWithdrawCountCell, ZoneSdkCheckpointCellOwned,
+        ZoneSdkCheckpointCellRef,
     },
 };
 
@@ -31,6 +35,8 @@ pub const DB_META_ZONE_SDK_CHECKPOINT_KEY: &str = "zone_sdk_checkpoint";
 /// Key base for storing queued deposit events that were not yet
 /// fulfilled on L2.
 pub const DB_META_PENDING_DEPOSIT_EVENTS_KEY: &str = "pending_deposit_events";
+/// Key base for counting unseen L2 withdraw intents.
+pub const DB_META_UNSEEN_WITHDRAW_COUNT_KEY: &str = "unseen_withdraw_count";
 
 /// Key base for storing the LEE state.
 pub const DB_LEE_STATE_KEY: &str = "lee_state";
@@ -310,6 +316,58 @@ impl RocksDBIO {
         }
 
         Ok(removed)
+    }
+
+    pub fn increment_unseen_withdraw_count(
+        &self,
+        amount: u64,
+        bedrock_account_pk: [u8; 32],
+    ) -> DbResult<u64> {
+        let key_params = (amount, bedrock_account_pk);
+
+        let current = self
+            .get_opt::<UnseenWithdrawCountCell>(key_params)?
+            .map_or(0, |cell| cell.0);
+
+        let next = current.checked_add(1).ok_or_else(|| {
+            DbError::db_interaction_error("Unseen withdraw counter overflow".to_owned())
+        })?;
+
+        self.put(&UnseenWithdrawCountCell(next), key_params)?;
+
+        Ok(next)
+    }
+
+    pub fn consume_unseen_withdraw_count(
+        &self,
+        amount: u64,
+        bedrock_account_pk: [u8; 32],
+    ) -> DbResult<bool> {
+        let key_params = (amount, bedrock_account_pk);
+
+        let Some(current) = self
+            .get_opt::<UnseenWithdrawCountCell>(key_params)?
+            .map(|cell| cell.0)
+        else {
+            return Ok(false);
+        };
+
+        if let Some(next) = current.checked_sub(1) {
+            self.put(&UnseenWithdrawCountCell(next), key_params)?;
+        } else {
+            let cf_meta = self.meta_column();
+            let db_key =
+                <UnseenWithdrawCountCell as SimpleStorableCell>::key_constructor(key_params)?;
+
+            self.db.delete_cf(&cf_meta, db_key).map_err(|rerr| {
+                DbError::rocksdb_cast_message(
+                    rerr,
+                    Some("Failed to delete unseen withdraw count".to_owned()),
+                )
+            })?;
+        }
+
+        Ok(true)
     }
 
     pub fn put_block(

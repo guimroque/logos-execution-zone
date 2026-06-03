@@ -490,6 +490,9 @@ async fn bedrock_deposit_claim_and_withdraw_round_trip_succeeds() -> anyhow::Res
     observe_result
         .context("Failed while waiting for finalized withdraw event from zone indexer")?;
 
+    // Sleep to observe sequencer log about validated withdraw event
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
     Ok(())
 }
 

@@ -9,7 +9,7 @@ use crate::{
     sequencer::{
         CF_LEE_STATE_NAME, DB_LEE_STATE_KEY, DB_META_LAST_FINALIZED_BLOCK_ID,
         DB_META_LATEST_BLOCK_META_KEY, DB_META_PENDING_DEPOSIT_EVENTS_KEY,
-        DB_META_ZONE_SDK_CHECKPOINT_KEY,
+        DB_META_UNSEEN_WITHDRAW_COUNT_KEY, DB_META_ZONE_SDK_CHECKPOINT_KEY,
     },
 };
 
@@ -170,6 +170,40 @@ impl SimpleWritableCell for PendingDepositEventsCellRef<'_> {
             DbError::borsh_cast_message(
                 err,
                 Some("Failed to serialize pending deposit events cell".to_owned()),
+            )
+        })
+    }
+}
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+pub struct UnseenWithdrawCountCell(pub u64);
+
+impl SimpleStorableCell for UnseenWithdrawCountCell {
+    type KeyParams = (u64, [u8; 32]);
+
+    const CELL_NAME: &'static str = DB_META_UNSEEN_WITHDRAW_COUNT_KEY;
+    const CF_NAME: &'static str = CF_META_NAME;
+
+    fn key_constructor((amount, bedrock_account_pk): Self::KeyParams) -> DbResult<Vec<u8>> {
+        borsh::to_vec(&(Self::CELL_NAME, amount, bedrock_account_pk)).map_err(|err| {
+            DbError::borsh_cast_message(
+                err,
+                Some(format!(
+                    "Failed to serialize {:?} key params",
+                    Self::CELL_NAME
+                )),
+            )
+        })
+    }
+}
+
+impl SimpleReadableCell for UnseenWithdrawCountCell {}
+
+impl SimpleWritableCell for UnseenWithdrawCountCell {
+    fn value_constructor(&self) -> DbResult<Vec<u8>> {
+        borsh::to_vec(&self).map_err(|err| {
+            DbError::borsh_cast_message(
+                err,
+                Some("Failed to serialize unseen withdraw count".to_owned()),
             )
         })
     }

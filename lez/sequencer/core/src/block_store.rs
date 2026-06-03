@@ -186,6 +186,24 @@ impl SequencerStore {
         self.dbio
             .remove_fulfilled_pending_deposit_events_up_to_block(finalized_block_id)
     }
+
+    pub fn record_unseen_withdraw(
+        &self,
+        amount: u64,
+        bedrock_account_pk: [u8; 32],
+    ) -> DbResult<u64> {
+        self.dbio
+            .increment_unseen_withdraw_count(amount, bedrock_account_pk)
+    }
+
+    pub fn consume_unseen_withdraw(
+        &self,
+        amount: u64,
+        bedrock_account_pk: [u8; 32],
+    ) -> DbResult<bool> {
+        self.dbio
+            .consume_unseen_withdraw_count(amount, bedrock_account_pk)
+    }
 }
 
 pub(crate) fn block_to_transactions_map(block: &Block) -> HashMap<HashType, u64> {
