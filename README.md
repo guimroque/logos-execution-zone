@@ -120,18 +120,33 @@ curl -L https://risczero.com/install | bash
 rzup install
 ```
 
+### Install ZK circuits
+
+The `v0.4.2` circuit artifacts must live under `~/.logos-blockchain-circuits` (or `$LOGOS_BLOCKCHAIN_CIRCUITS`):
+
+```sh
+git clone https://github.com/logos-blockchain/logos-blockchain.git && cd logos-blockchain
+# platform: linux-x86_64 | linux-aarch64 | macos-aarch64
+./scripts/setup-logos-blockchain-circuits.sh v0.4.2 macos-aarch64 ~/.logos-blockchain-circuits
+mv ~/.logos-blockchain-circuits/logos-blockchain-circuits-*/* ~/.logos-blockchain-circuits/  # flatten to root
+```
+
 # Run tests
 
 The LEZ repository includes both unit and integration test suites.
 
 ### Unit tests
 
+`cargo test --release` at the workspace root also picks up the `integration_tests` crate, which requires Docker (see below). To run only the unit tests, exclude it:
+
 ```bash
 # RISC0_DEV_MODE=1 is used to skip proof generation and reduce test runtime overhead
-RISC0_DEV_MODE=1 cargo test --release
+RISC0_DEV_MODE=1 cargo test --release --workspace --exclude integration_tests
 ```
 
 ### Integration tests
+
+Integration tests bring up a Bedrock node in a Docker container, so the **Docker daemon must be running**.
 
 ```bash
 export LEE_WALLET_HOME_DIR=$(pwd)/integration_tests/configs/debug/wallet/
@@ -139,6 +154,8 @@ cd integration_tests
 # RISC0_DEV_MODE=1 skips proof generation; RUST_LOG=info enables runtime logs
 RUST_LOG=info RISC0_DEV_MODE=1 cargo run $(pwd)/configs/debug all
 ```
+
+If the Bedrock image pull fails with `denied: denied`, you most likely have a stale ghcr.io credential cached locally. The image is public, so run `docker logout ghcr.io` and retry (no login is required).
 
 # Run the sequencer and node
 ## Running Manually
